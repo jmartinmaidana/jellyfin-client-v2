@@ -1,0 +1,164 @@
+================================================================================
+GUÍA TÉCNICA DE ADMINISTRACIÓN - SERVIDOR REMOTO P2P (CACHYOS + TAILSCALE)
+================================================================================
+
+1. ARQUITECTURA IMPLEMENTADA
+--------------------------------------------------------------------------------
+- Servidor HTTP de archivos: miniserve (puerto 8000, escuchando en 0.0.0.0)
+- Carpeta compartida:        /home/jmmaidana/Descargas/Descargas Torrent
+- Transporte y cifrado:      Tailscale Peer-to-Peer (túnel directo WireGuard)
+- IP fija del servidor:      100.119.226.126
+- IP asignada al invitado:   100.103.99.123
+- Servicio de usuario:       ~/.config/systemd/user/pelis-server.service
+
+
+2. CONFIGURACIÓN DEL SERVICIO SYSTEMD (ARRANQUE AUTOMÁTICO)
+--------------------------------------------------------------------------------
+Ubicación: ~/.config/systemd/user/pelis-server.service
+
+[Unit]
+Description=Servidor de Peliculas Miniserve
+After=network-online.target tailscaled.service
+
+[Service]
+ExecStart=/usr/bin/miniserve -v --auth invitado:Chia48626863 --port 8000 "/home/jmmaidana/Descargas/Descargas Torrent"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+
+Comandos aplicados para persistencia tras reinicios:
+  sudo systemctl enable tailscaled
+  sudo loginctl enable-linger jmmaidana
+  systemctl --user daemon-reload
+  systemctl --user enable --now pelis-server.service
+
+
+3. SEGURIDAD: CERRAR TÚNEL PÚBLICO ANTIGUO (FUNNEL)
+--------------------------------------------------------------------------------
+Para evitar que el servidor quede expuesto a internet abierto y asegurar que
+solo se acceda mediante la red privada de Tailscale:
+  sudo tailscale funnel reset
+
+
+4. COMANDOS DE CONTROL DIARIO DEL SERVIDOR
+--------------------------------------------------------------------------------
+- Verificar estado de todos los servicios:
+  systemctl is-active tailscaled && systemctl --user is-active pelis-server.service
+
+- Reiniciar el servidor de archivos (tras cambiar contraseña o parámetros):
+  systemctl --user restart pelis-server.service
+
+- Detener el acceso remoto temporalmente:
+  systemctl --user stop pelis-server.service
+
+- Volver a iniciar el acceso remoto:
+  systemctl --user start pelis-server.service
+
+
+5. MONITOREO Y AUDITORÍA DE CONEXIONES EN TIEMPO REAL
+--------------------------------------------------------------------------------
+- Ver si el usuario remoto está descargando o reproduciendo en este instante:
+  ss -tnp | grep :8000
+  (Si muestra estado ESTAB junto a 100.103.99.123, hay transferencia activa).
+
+- Medir velocidad de subida en vivo hacia el cliente (en Mbps):
+  watch -n 1 "ss -ti 'sport = :8000'"
+
+- Ver registro histórico y en vivo de qué archivos abre o descarga el usuario:
+  journalctl --user -u pelis-server.service -f
+  (Requiere el parámetro -v en ExecStart de pelis-server.service).
+
+
+6. GESTIÓN DE USUARIOS INVITADOS (TAILSCALE SHARE)
+--------------------------------------------------------------------------------
+- Panel de administración: https://login.tailscale.com/admin/machines
+- Para agregar otro usuario: Clic en "..." junto a cachyosmartin -> Share...
+- Para revocar el acceso al usuario actual: En la misma ventana Share..., hacer
+  clic en "..." junto a su correo electrónico -> Remove share.
+================================================================================
+
+
+
+================================================================================
+GUÍA DE CONEXIÓN Y REPRODUCCIÓN (USUARIO WINDOWS - CONEXIÓN DIRECTA P2P)
+================================================================================
+
+1. REQUISITO PREVIO (ÚNICA VEZ)
+--------------------------------------------------------------------------------
+Para conectarte directamente al servidor a máxima velocidad sin límites de ancho
+de banda, necesitás tener instalado Tailscale en tu PC con Windows:
+
+1. Aceptá el enlace de invitación enviado por el administrador e iniciá sesión
+   con tu cuenta de Google o Microsoft.
+2. Descargá e instalá Tailscale para Windows desde:
+   https://tailscale.com/download/windows
+3. Abrí el ícono de Tailscale en la barra de tareas (abajo a la derecha, junto
+   al reloj de Windows), hacé clic en "Log in" e iniciá sesión con la MISMA
+   cuenta con la que aceptaste la invitación.
+4. Verificá que el estado indique "Connected".
+
+Nota: Una vez configurado, Tailscale se inicia automáticamente con Windows. En
+el futuro solo tenés que comprobar que siga diciendo "Connected".
+
+
+2. DATOS DE ACCESO AL SERVIDOR
+--------------------------------------------------------------------------------
+- Dirección web (URL): http://100.119.226.126:8000
+- Usuario:             invitado
+- Contraseña:          Chia48626863
+
+(Importante: La dirección comienza con http:// sin la "s", ya que el tráfico
+ya viaja cifrado de extremo a extremo a través del túnel privado de Tailscale).
+
+
+3. OPCIÓN A: DESCARGAR PELÍCULAS O SERIES EN TU PC
+--------------------------------------------------------------------------------
+1. Abrí tu navegador web (Chrome, Edge, Brave o Firefox).
+2. Ingresá a: http://100.119.226.126:8000
+   (Si el navegador intenta cambiarlo a https://, borrá la "s" manualmente).
+3. Ingresá el usuario (invitado) y la contraseña (Chia48626863).
+4. Hacé clic sobre el archivo deseado para descargarlo a máxima velocidad.
+
+
+4. OPCIÓN B: VER EN VIVO SIN DESCARGAR USANDO VLC MEDIA PLAYER (RECOMENDADO)
+--------------------------------------------------------------------------------
+El navegador web no reproduce archivos .mkv con audio envolvente o subtítulos
+integrados. Para ver cualquier película o episodio en vivo (incluidos archivos
+pesados en 1080p/4K), utilizá VLC Media Player:
+
+Paso 1 - Copiar el enlace directo del video:
+  1. Entrá a http://100.119.226.126:8000 desde tu navegador web.
+  2. Hacé clic derecho sobre el archivo de video que querés mirar y elegí
+     "Copiar dirección de enlace" (Copy link address).
+
+Paso 2 - Reproducir en VLC:
+  1. Abrí VLC Media Player en Windows.
+  2. Presioná Ctrl + N (o menú Medio -> Abrir ubicación de red...).
+  3. Pegá la dirección copiada y agregá "invitado:Chia48626863@" justo después
+     de "http://". Debe quedar exactamente con este formato:
+
+     http://invitado:Chia48626863@100.119.226.126:8000/Nombre_Archivo.mkv
+
+  4. Hacé clic en "Reproducir".
+
+Consejo para archivos muy pesados (8 GB a 15 GB):
+Si notás alguna pausa al adelantar o en escenas de mucha acción, aumentá el
+colchón de lectura anticipada en VLC:
+  - Menú Herramientas -> Preferencias (Ctrl + P).
+  - Abajo a la izquierda, en "Mostrar ajustes", marcá "Todo".
+  - En el panel izquierdo entrá a "Entrada / Códecs".
+  - Buscá "Caché de red (ms)" (por defecto en 1000) y cambialo a 5000 o 10000.
+  - Hacé clic en "Guardar".
+
+
+5. CÓMO VERLO EN TU TELEVISOR
+--------------------------------------------------------------------------------
+- Por cable HDMI desde Windows: Conectá la PC al televisor y reproducí en VLC.
+- Desde un Smart TV con Android TV / Google TV / Fire TV / Deco Flow:
+  Instalá la app "VLC" desde la tienda del televisor, entrá a "Explorar" ->
+  "Nueva transmisión" (+) e ingresá la misma URL con credenciales del Paso 2.
+================================================================================
+
+

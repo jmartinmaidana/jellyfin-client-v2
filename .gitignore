@@ -1,0 +1,13 @@
+# Variables de entorno y credenciales locales (se comparte únicamente .env.example)
+.env
+
+# Artefactos de compilación, dependencias binarias descargadas y empaquetados
+dist/
+*.exe
+*.dll
+*.msi
+*.zip
+
+# Archivos de diagnóstico y temporales
+*.log
+/tmp/

@@ -1,0 +1,117 @@
+================================================================================
+GUÍA COMPLETA: STREAMING DE PELÍCULAS EN RED LOCAL (CACHYOS -> TV LG Y DECO FLOW)
+Arquitectura: MiniDLNA (DLNA nativo directo a carpeta) + miniserve LAN (VLC Flow)
+================================================================================
+
+1. RESUMEN DE LA ARQUITECTURA IMPLEMENTADA EN CASA
+--------------------------------------------------------------------------------
+El sistema permite reproducir películas alojadas en "/home/jmmaidana/Descargas/Descargas Torrent"
+en tu televisor LG y en el decodificador Flow utilizando la red Wi-Fi / LAN
+doméstica, sin consumir datos de internet y con máxima velocidad para video HD/4K.
+
+Se implementaron dos vías complementarias según el dispositivo:
+- Vía 1 (Smart TV LG nativo): Servidor DLNA mediante "minidlna", que expone
+  directamente la carpeta de descargas en el menú "Entradas / Sources" y en la
+  aplicación "Foto y Video" del televisor LG.
+- Vía 2 (Decodificador Flow / Android TV): Reproducción mediante VLC Media
+  Player conectado al servidor HTTP local "miniserve" en el puerto 8000, ideal
+  para formatos complejos, múltiples pistas de audio o subtítulos externos.
+
+
+2. CONFIGURACIÓN REALIZADA EN CACHYOS (PASOS QUE FUERON NECESARIOS)
+--------------------------------------------------------------------------------
+A. Instalación de MiniDLNA:
+   sudo pacman -S minidlna
+
+B. Configuración de "/etc/minidlna.conf":
+   En Arch Linux / CachyOS, el servicio de systemd gestiona el usuario dinámico
+   por su cuenta, por lo que fue necesario comentar la directiva "user=" y
+   definir la ruta directa sin comillas ni barras invertidas:
+
+   sudo sed -i 's/^user=/#user=/' /etc/minidlna.conf
+   sudo sed -i '/^media_dir=/d' /etc/minidlna.conf
+   echo 'media_dir=V,/home/jmmaidana/Descargas/Descargas Torrent' | sudo tee -a /etc/minidlna.conf
+
+C. Desbloqueo de acceso de solo lectura a "/home" para systemd:
+   Por defecto, CachyOS aísla "/home" para los servicios del sistema mediante
+   "ProtectHome=yes". Se creó una sobrescritura limpia en modo solo lectura:
+
+   sudo mkdir -p /etc/systemd/system/minidlna.service.d
+   printf "[Service]\nProtectHome=read-only\n" | sudo tee /etc/systemd/system/minidlna.service.d/home.conf
+
+D. Permisos de paso y lectura directa sobre la carpeta de descargas:
+   Para que el servicio pueda atravesar los directorios hasta "Descargas Torrent"
+   y leer los archivos (incluidos los que se descarguen a futuro):
+
+   chmod o+x /home/jmmaidana
+   chmod o+x /home/jmmaidana/Descargas
+   chmod -R o+rX "/home/jmmaidana/Descargas/Descargas Torrent"
+   sudo setfacl -R -d -m o::rX "/home/jmmaidana/Descargas/Descargas Torrent"
+
+E. Activación e indexación inicial:
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now minidlna
+
+
+3. OPERACIÓN DIARIA Y VERIFICACIÓN EN CACHYOS
+--------------------------------------------------------------------------------
+A. Verificar que MiniDLNA esté corriendo y cuántos videos tiene indexados:
+   systemctl status minidlna
+   curl -s http://127.0.0.1:8200 | grep -oE "(Video files</td><td>[0-9]*|LG)"
+
+B. APAGAR el servidor DLNA del televisor:
+   sudo systemctl stop minidlna
+
+C. ENCENDER el servidor DLNA del televisor:
+   sudo systemctl start minidlna
+
+D. Si descargás una película nueva y no aparece en el TV LG:
+   (En caso de que el cliente torrent cree el archivo sin permisos de lectura):
+   chmod -R o+rX "/home/jmmaidana/Descargas/Descargas Torrent"
+
+E. Averiguar la IP local de tu notebook en CachyOS (necesario para Deco Flow):
+   ip -4 addr show | grep inet
+   (Buscar la IP de tu red Wi-Fi/LAN, por ejemplo: 192.168.1.5).
+
+
+4. CÓMO REPRODUCIR EN EL SMART TV LG (OPCIÓN 1: NATIVA VÍA DLNA)
+--------------------------------------------------------------------------------
+1. Asegurarse de que tanto la notebook como el TV LG estén en la misma red Wi-Fi.
+2. En el control remoto del TV LG, presionar el botón de "Entradas / Sources"
+   (o abrir la aplicación nativa "Foto y Video" / Media Player).
+3. Seleccionar el dispositivo de red que aparece con el nombre del servidor
+   (ej. "Peliculas Martin" o "CachyOSMartin: minidlna").
+4. Entrar a la carpeta "Videos" -> "All Video" o "Folders" y elegir la película.
+5. Si el archivo tiene subtítulos en formato .srt con exactamente el mismo
+   nombre de archivo en la carpeta, el reproductor LG los cargará automáticamente.
+
+
+5. CÓMO REPRODUCIR EN EL DECODIFICADOR FLOW (OPCIÓN 2: VÍA VLC MEDIA PLAYER)
+--------------------------------------------------------------------------------
+Recomendado cuando un archivo .mkv tiene audio DTS/AC3 que el televisor no
+reproduce de forma nativa, o cuando querés seleccionar pistas de audio/subtítulos
+manualmente.
+
+Requisitos previos en la notebook:
+- Tener activo el servicio "pelis-server.service" en el puerto 8000:
+  systemctl --user start pelis-server.service
+
+Pasos en el decodificador Flow:
+1. Ir al menú de aplicaciones del decodificador Flow, abrir Google Play Store
+   e instalar "VLC for Android".
+2. Abrir VLC en el televisor y entrar en la pestaña "Explorar" (Browse) o
+   "Red" (Network) en el menú lateral izquierdo.
+3. Seleccionar "Nueva transmisión" (Stream) o el botón "+" para añadir red.
+4. Escribir la URL local de tu notebook usando HTTP (sin "s"), el usuario y
+   contraseña de miniserve, tu IP local, el puerto 8000 y el nombre del archivo:
+
+   http://invitado:Chia48626863@192.168.1.5:8000/nombre_de_la_pelicula.mkv
+
+   (Reemplazar "192.168.1.5" por la IP local actual de tu notebook y asegurarse
+   de que el nombre del archivo no contenga espacios ni corchetes [ ]).
+
+Consejo práctico para escribir rápido en el Deco Flow:
+- Instalar la aplicación "Google TV" (o "Android TV Remote") en tu teléfono
+  celular conectado al mismo Wi-Fi. Permite vincularse con el deco de Flow y
+  usar el teclado del celular para copiar y pegar la URL en un segundo.
+================================================================================
